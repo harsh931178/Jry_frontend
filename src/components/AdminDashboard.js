@@ -15,6 +15,8 @@ import { useAuth } from "../context/AuthContext";
 
 const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editingUser, setEditingUser] = useState(null);
@@ -26,6 +28,9 @@ const AdminDashboard = () => {
     totalBusinesses: 0,
     totalQueries: 0,
   });
+  const [viewUser, setViewUser] = useState(null);
+const [showViewModal, setShowViewModal] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -61,41 +66,29 @@ const AdminDashboard = () => {
         setError("Authentication token not found");
         return;
       }
-
-      // console.log("Fetching users with token:", token);
-      const response = await axios.get(
-        "http://localhost:5000/api/admin/users",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      // console.log("Users response:", response.data);
-
+  
+      const response = await axios.get("http://localhost:5000/api/admin/users", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+  
       if (response.data && Array.isArray(response.data)) {
-        setUsers(response.data);
-
+        const usersWithSerialNumbers = response.data.map((user, index) => ({
+          ...user,
+          originalSerialNumber: `jry${String(index + 1).padStart(3, '0')}`, // Store the original serial number
+        }));
+        setUsers(usersWithSerialNumbers);
+  
         // Calculate statistics
         const totalUsers = response.data.length;
-        const totalAdmins = response.data.filter(
-          (user) => user.role === "admin"
-        ).length;
-        const totalBusinesses = response.data.filter(
-          (user) => user.businessOption
-        ).length;
-        const allQueryIds = response.data.flatMap((user) =>
-          Array.isArray(user.queries) ? user.queries : []
-        );
-
+        const totalAdmins = response.data.filter((user) => user.role === "admin").length;
+        const totalBusinesses = response.data.filter((user) => user.businessOption).length;
+        const allQueryIds = response.data.flatMap((user) => Array.isArray(user.queries) ? user.queries : []);
         const uniqueQueryIds = [...new Set(allQueryIds)];
         const totalQueries = uniqueQueryIds.length;
-        // setStats(prev => ({ ...prev, totalQueries }));
-
-        // console.log("Statistics:", { totalUsers, totalAdmins, totalBusinesses });
-
+  
         setStats({
           totalUsers,
           totalAdmins,
@@ -103,26 +96,20 @@ const AdminDashboard = () => {
           totalQueries,
         });
       } else {
-        console.error("Invalid response format:", response.data);
         setError("Invalid response format from server");
       }
     } catch (error) {
-      console.error("Error fetching users:", error);
       if (error.response?.status === 401) {
         setError("Unauthorized access. Please login again.");
         navigate("/login");
-      } else if (error.response?.status === 404) {
-        setError("No users found in the database");
       } else {
-        setError(
-          error.response?.data?.message ||
-            "Failed to fetch users. Please try again later."
-        );
+        setError(error.response?.data?.message || "Failed to fetch users. Please try again later.");
       }
     } finally {
       setLoading(false);
     }
   }, [navigate]);
+  
 
   useEffect(() => {
     try {
@@ -143,14 +130,15 @@ const AdminDashboard = () => {
   }, [navigate, fetchUsers]);
 
   // Filter users based on search query
-  const filteredUsers = users.filter(
-    (user) =>
+  const filteredUsers = users.filter((user, index) => {
+    const serialNumber = `jry${String(index + 1).padStart(3, '0')}`;  // Generate Serial Number
+    return (
+      serialNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||  // Search by serial number
       (user.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
       (user.email?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
-      (user.businessName?.toLowerCase() || "").includes(
-        searchQuery.toLowerCase()
-      )
-  );
+      (user.businessName?.toLowerCase() || "").includes(searchQuery.toLowerCase())
+    );
+  });
 
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -262,6 +250,27 @@ const AdminDashboard = () => {
       </div>
     );
   }
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+  
+
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    if (!sortConfig.key) return 0;
+  
+    const aVal = a[sortConfig.key]?.toString().toLowerCase() || '';
+    const bVal = b[sortConfig.key]?.toString().toLowerCase() || '';
+  
+    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+  
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -381,124 +390,179 @@ const AdminDashboard = () => {
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    User
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Business Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Connections
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredUsers.map((user) => (
-                  <tr key={user._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10">
-                          <img
-                            className="h-10 w-10 rounded-full object-cover"
-                            src={user.image || "/default-avatar.png"}
-                            alt={user.name}
-                          />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {user.name}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {user.businessName || "No Business"}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {user.email}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          user.role === "admin"
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-green-100 text-green-800"
-                        }`}
-                      >
-                        {user.role || "user"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                        {user.businessOption || "Not Specified"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={() => setEditingUser(user)}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Edit User"
-                        >
-                          <FaEdit />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(user._id)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete User"
-                        >
-                          <FaTrash />
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {user.connections?.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {user.connections.map((connId) => {
-                            const connUser = users.find(
-                              (u) => u._id === connId
-                            );
-                            return connUser ? (
-                              <span
-                                key={connId}
-                                className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs"
-                              >
-                                {connUser.name}
-                              </span>
-                            ) : (
-                              <span
-                                key={connId}
-                                className="bg-gray-200 text-gray-700 px-2 py-1 rounded-full text-xs"
-                              >
-                                Unknown
-                              </span>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 italic">
-                          No connections
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+            <thead className="bg-gray-50">
+  <tr>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+      S.No
+    </th>
+    <th
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+      onClick={() => handleSort('name')}
+    >
+      User {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+    </th>
+    <th
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+      onClick={() => handleSort('email')}
+    >
+      Email {sortConfig.key === 'email' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+    </th>
+    <th
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+      onClick={() => handleSort('role')}
+    >
+      Role {sortConfig.key === 'role' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+    </th>
+    <th
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+      onClick={() => handleSort('businessOption')}
+    >
+      Business Type {sortConfig.key === 'businessOption' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+      Actions
+    </th>
+    <th
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+      onClick={() => handleSort('Connections')}
+    >
+      Connections {sortConfig.key === 'Connections' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+    </th>
+    <th
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+      onClick={() => handleSort('TotalConnections')}
+    >
+      Total Connections {sortConfig.key === 'TotalConnections' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+    </th>
+    <th
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+     
+    >
+      Profile 
+    </th>
+  </tr>
+</thead>
+<tbody className="bg-white divide-y divide-gray-200">
+  {sortedUsers.map((user) => {
+    return (
+      <tr key={user._id} className="hover:bg-gray-50">
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+          {user.originalSerialNumber} {/* Display Original Serial Number */}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 h-10 w-10">
+              <img className="h-10 w-10 rounded-full object-cover" src={user.image || "/default-avatar.png"} alt={user.name} />
+            </div>
+            <div className="ml-4">
+              <div className="text-sm font-medium text-gray-900">{user.name}</div>
+              <div className="text-sm text-gray-500">{user.businessName || "No Business"}</div>
+            </div>
+          </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
+        <td className="px-6 py-4 whitespace-nowrap">
+          <span className={user.role === "admin" ? "bg-purple-100 text-purple-800" : "bg-green-100 text-green-800"}>
+            {user.role || "user"}
+          </span>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap">
+          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+            {user.businessOption || "Not Specified"}
+          </span>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+          <div className="flex space-x-3">
+            <button onClick={() => setEditingUser(user)} className="text-blue-600 hover:text-blue-900" title="Edit User">
+              <FaEdit />
+            </button>
+            <button onClick={() => handleDeleteUser(user._id)} className="text-red-600 hover:text-red-900" title="Delete User">
+              <FaTrash />
+            </button>
+          </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+          {user.connections?.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {user.connections.map((connId) => {
+                const connUser = users.find((u) => u._id === connId);
+                return connUser ? (
+                  <span key={connId} className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                    {connUser.name}
+                  </span>
+                ) : (
+                  <span key={connId} className="bg-gray-200 text-gray-700 px-2 py-1 rounded-full text-xs">
+                    Unknown
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <span className="text-gray-400 italic">No connections</span>
+          )}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+          {user.connections?.length > 0 ? (
+            <div className="flex flex-wrap gap-2">{user.connections.length}</div>
+          ) : (
+            <span className="text-gray-400 italic">No connections</span>
+          )}
+        </td>
+        <button
+  onClick={() => {
+    setViewUser(user);
+    setShowViewModal(true);
+  }}
+  className="text-indigo-600 hover:text-indigo-900"
+>
+  View
+</button>
+
+      </tr>
+    );
+  })}
+</tbody>
+
+
             </table>
           </div>
         )}
       </div>
+
+      {showViewModal && viewUser && (
+  <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+    <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6 relative">
+      <button
+        onClick={() => setShowViewModal(false)}
+        className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+      >
+        <FaTimes />
+      </button>
+      <h2 className="text-xl font-semibold mb-4">User Details</h2>
+      <div className="space-y-2 text-sm">
+        <p><strong>Name:</strong> {viewUser.name}</p>
+        <p><strong>Email:</strong> {viewUser.email}</p>
+        <p><strong>Phone No:</strong> {viewUser.phoneNo}</p>
+        <p><strong>Role:</strong> {viewUser.role}</p>
+        <p><strong>Father's Name:</strong> {viewUser.fatherName}</p>
+        <p><strong>DOB:</strong> {viewUser.dob}</p>
+        <p><strong>Business Name:</strong> {viewUser.businessName}</p>
+        <p><strong>Business Type:</strong> {viewUser.businessOption}</p>
+        <p><strong>Post:</strong> {viewUser.post}</p>
+        <p><strong>Village/Town:</strong> {viewUser.villageTown}</p>
+        <p><strong>Police Station:</strong> {viewUser.policeStation}</p>
+        <p><strong>District:</strong> {viewUser.district}</p>
+        <p><strong>State:</strong> {viewUser.state}</p>
+        <p><strong>Pin Code:</strong> {viewUser.pinCode}</p>
+        <p><strong>Aadhar No:</strong> {viewUser.aadharNo}</p>
+        <p><strong>PAN No:</strong> {viewUser.panNo}</p>
+        <p><strong>Total Connections:</strong> {viewUser.connections.length || 0}</p>
+        <p><strong>Connections:</strong> {(viewUser.connections || [])}</p>
+      </div>
+    </div>
+  </div>
+)}
+
 
       {/* Add User Modal */}
       {showAddModal && (
